@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "edinet-postgres": {
+      "command": "uv",
+      "args": ["run", "python", "src/edinet2dataset/pg_mcp_server.py"]
+    }
+  }
+}

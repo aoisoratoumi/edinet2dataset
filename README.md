@@ -91,6 +91,105 @@ $ uv run python src/edinet2dataset/parser.py --file_path data/E02144/S100TR7I.ts
 ```
 
 
+## MCP Server
+
+edinet2dataset provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that lets Claude answer questions like *"営業利益が伸びている会社を大きい順から挙げてください"* directly from EDINET data.
+
+### Setup
+
+**Step 1.** Build the profit index (run once after downloading the corpus):
+
+```bash
+uv run python scripts/build_profit_index.py
+```
+
+This parses all TSV files in `edinet_corpus/annual/` and saves a pre-computed index to `edinet_corpus/profit_index.json`.
+
+**Step 2.** Register the MCP server with Claude Code by adding the following to `.claude/settings.json` in this project (already included in the repository):
+
+```json
+{
+  "mcpServers": {
+    "edinet2dataset": {
+      "command": "uv",
+      "args": ["run", "python", "src/edinet2dataset/mcp_server.py"],
+      "cwd": "/path/to/edinet2dataset"
+    }
+  }
+}
+```
+
+**Step 3.** Restart Claude Code. Run `/mcp` to confirm `edinet2dataset` is connected.
+
+### Available Tools
+
+| Tool | Description |
+|---|---|
+| `rank_by_operating_profit_growth` | Ranks companies by operating profit growth rate or growth amount |
+| `get_company_financials` | Returns BS / PL / CF data for a given EDINET code |
+| `search_company_by_name` | Searches the index by company name to find its EDINET code |
+
+### Example Queries
+
+```
+営業利益が伸びている会社を大きい順から20社挙げてください
+トヨタ自動車の直近の財務データを見せてください
+"ソニー"で会社を検索してください
+```
+
+## PostgreSQL MCP Server
+
+For deeper company research (financial history across all reported years, plus qualitative sections like management strategy and R&D), edinet2dataset also provides an MCP server backed by the PostgreSQL `reports` table populated by `scripts/load_to_postgres.py`.
+
+### Setup
+
+**Step 1.** Load the corpus into PostgreSQL (see [Load into PostgreSQL](#load-into-postgresql) above).
+
+**Step 2.** The server is already registered in `.mcp.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "edinet-postgres": {
+      "command": "uv",
+      "args": ["run", "python", "src/edinet2dataset/pg_mcp_server.py"]
+    }
+  }
+}
+```
+
+Requires `DATABASE_URL` to be set (via `.env` or environment variable).
+
+**Step 3.** Run `/mcp` in Claude Code to confirm `edinet-postgres` is connected.
+
+### Available Tools
+
+| Tool | Description |
+|---|---|
+| `search_company` | Fuzzy-searches company names to find their EDINET code |
+| `list_reports` | Lists all reports stored for a given EDINET code |
+| `get_financial_history` | Returns revenue, operating/ordinary/net profit, ROE, cash flows etc. across every stored fiscal year |
+| `list_text_sections` | Lists the qualitative text sections (business overview, management policy, R&D, risks, etc.) available for a report |
+| `get_text_section` | Returns the (HTML-stripped, paginated) text of a given section |
+| `run_readonly_sql` | Runs an arbitrary read-only `SELECT` against the `reports` table for custom aggregations/comparisons |
+
+### Example Queries
+
+```
+サイバーダインについて調べてください
+トヨタ自動車の過去10年の経営成績と経営戦略をレポートしてください
+ランダムに10社の経営成績、経営戦略、戦術を調べてレポートしてください
+```
+
+## Claude Code Skills
+
+This repository ships two Claude Code skills under `.claude/skills/`:
+
+| Skill | Triggers on | What it does |
+|---|---|---|
+| `edinet-download` | "EDINETから最新までダウンロードして" etc. | Runs `edinet_corpus.sh` to fetch new filings, then loads them into PostgreSQL via `load_to_postgres.py` so the DB stays current |
+| `company-research` | "〇〇について調べて" / "〇〇を分析して" | Uses the `edinet-postgres` MCP tools to research a company's financial performance (including revenue/operating/ordinary/net profit trends), management strategy and tactics, and produce a report |
+
 ## Reproduce EDINET-Bench
 
 You can reproduce [EDINET-Bench](https://huggingface.co/datasets/SakanaAI/EDINET-Bench) by running following commands. 
@@ -109,8 +208,20 @@ Download securities reports spanning 10 years for approximately 4,000 companies 
 $ bash edinet_corpus.sh
 ```
 
+`edinet_corpus.sh` downloads month by month from the start year (default `2026`, override with `bash edinet_corpus.sh 2020`) through **today's date**, so re-running it later fetches only the newly published reports. Already-downloaded documents are skipped automatically, so it is safe to run repeatedly (e.g. on a schedule) to keep the corpus up to date.
+
 > [!NOTE]
 > Please be careful not to send too many requests in parallel, as downloading reports from the past 10 years could place a significant load on EDINET.
+
+### Load into PostgreSQL
+
+Load the downloaded corpus into a PostgreSQL `reports` table (one row per document, with structured columns plus JSONB columns for `meta`/`summary`/`bs`/`pl`/`cf`/`text`):
+
+```bash
+$ uv run python scripts/load_to_postgres.py --corpus_dir edinet_corpus/annual
+```
+
+Set `DATABASE_URL` (e.g. `postgresql://user:password@localhost:5432/edinet`) via `.env` or `--database_url`. The load is an upsert keyed on `doc_id`, so re-running it after downloading new reports only inserts/updates the diff.
 
 
 You will get the following directories

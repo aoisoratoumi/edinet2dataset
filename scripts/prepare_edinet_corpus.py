@@ -1,6 +1,8 @@
 from argparse import ArgumentParser
 import os
 import json
+import time
+import random
 from edinet2dataset.downloader import Downloader
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -51,11 +53,14 @@ def process_result(result, downloader, output_dir, doc_type) -> None:
 
         if os.path.exists(os.path.join(path, f"{result.docID}.json")):
             logger.info(f"Skip {edinet_code}: already exists")
+            return
 
         os.makedirs(path, exist_ok=True)
 
         downloader.download_document(result.docID, "tsv", path)
+        time.sleep(random.uniform(1, 1.5))
         downloader.download_document(result.docID, "pdf", path)
+        time.sleep(random.uniform(1, 1.5))
 
         with open(
             os.path.join(path, f"{result.docID}.json"), "w", encoding="utf-8"

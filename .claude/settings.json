@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "edinet2dataset": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "src/edinet2dataset/mcp_server.py"
+      ],
+      "cwd": "/home/ayumu/src/edinet2dataset"
+    }
+  }
+}

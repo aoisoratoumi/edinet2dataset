@@ -110,7 +110,7 @@ def parse_tsv(
 ) -> FinancialData | None:
     """
     Parse the TSV file and return a FinancialData object.
-    Current implementation supports only consolidated reports.
+    Supports both consolidated and non-consolidated reports.
     """
 
     parser = Parser()
@@ -120,36 +120,38 @@ def parse_tsv(
     df = parser.unique_element_list(df)
     logger.info(f"Found {df.shape[0]} unique elements in {file_path}")
 
-    financial_data = {}  # JSONデータのベース
+    financial_data = {}
+    is_consolidated = True  # METAパース後に更新
 
     sheet_name_map = {
-        "META": META,
-        "SUMMARY": SUMMARY,
-        "TEXT": TEXT,
-        "BS": BS,
-        "PL": PL,
-        "CF": CF,
+        "META": (META, False),
+        "SUMMARY": (SUMMARY, True),
+        "TEXT": (TEXT, True),
+        "BS": (BS, True),
+        "PL": (PL, True),
+        "CF": (CF, True),
     }
-    for sheet_name, sheet in sheet_name_map.items():
-        if sheet_name == "META":
-            contain_year = False
-        else:
-            contain_year = True
-        sheet_data = {}  # シートごとのデータを格納
 
+    for sheet_name, (sheet, contain_year) in sheet_name_map.items():
+        sheet_data = {}
         elements = extract_leaf_elements(sheet)
 
         for element in elements:
             key, value = list(element.items())[0]
             filtered_df = parser.filter_by_element_id(df, key)
-            filtered_df = parser.filter_by_consolidation(filtered_df)
+            # 非連結企業の財務データは _NonConsolidatedMember コンテキストにあるため
+            # META は常に連結フィルタを適用し、財務シートは連結企業のみ適用する
+            if sheet_name == "META" or is_consolidated:
+                filtered_df = parser.filter_by_consolidation(filtered_df)
             result = parser.to_dict(filtered_df, value, contain_year)
             sheet_data.update(result)
 
-        financial_data[sheet_name] = sheet_data  # JSONデータに追加
-    if financial_data["META"].get("連結決算の有無") == "false":
-        return None
-    financial_data = FinancialData(
+        financial_data[sheet_name] = sheet_data
+
+        if sheet_name == "META":
+            is_consolidated = financial_data["META"].get("連結決算の有無") != "false"
+
+    return FinancialData(
         meta=financial_data["META"],
         summary=financial_data["SUMMARY"],
         text=financial_data["TEXT"],
@@ -157,7 +159,6 @@ def parse_tsv(
         pl=financial_data["PL"],
         cf=financial_data["CF"],
     )
-    return financial_data
 
 
 def parse_args():
