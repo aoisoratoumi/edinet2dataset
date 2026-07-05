@@ -156,6 +156,8 @@ cython_debug/
 
 # EDINET corpus data
 edinet_corpus/
+dataset/
+toyota_check.py
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
